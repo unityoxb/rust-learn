@@ -20,7 +20,7 @@ pub mod pallet {
     pub enum Event<T: Config> {
         ClaimCreated(T::AccountId, Vec<u8>),
         ClaimRevoked(T::AccountId, Vec<u8>),
-        ClaimTransfered(T::AccountId, Vec<u8>),
+        ClaimTransferred(T::AccountId, Vec<u8>),
     }
 
     #[pallet::error]
@@ -106,29 +106,39 @@ pub mod pallet {
             Ok(().into())
         }
 
-        // 转移这部分不会写，不知道如何获取到接收者的地址
-        #[pallet::weight(10_000)]
+        // 转移
+        #[pallet::weight(1_000)]
         pub(super) fn transfer_claim(
             origin: OriginFor<T>,
-            proof: Vec<u8>,
+            recipient: T::AccountId,
+            proof: Vec<u8>
         ) -> DispatchResultWithPostInfo {
 
             // Check that the extrinsic was signed and get the signer.
-            // This function will return an error if the extrinsic is not signed.
-            // https://substrate.dev/docs/en/knowledgebase/runtime/origin
             let sender = ensure_signed(origin)?;
+        
+            // Verify that the specified proof has already been claimed.         
+            ensure!(Proofs::<T>::contains_key(&proof), Error::<T>::AlreadyExist);
 
-            // Verify that the specified proof has not already been claimed.         
-            ensure!(Proofs::<T>::contains_key(&proof), Error::<T>::NoSuchProof);
+            // Get owner of the claim.
+            let (owner, _) = Proofs::<T>::get(&proof);
 
-            // Get the block number from the FRAME System module.
-            let current_block = <frame_system::Module<T>>::block_number();
+            // Verify that sender of the current call is the claim owner.
+            ensure!(sender == owner, Error::<T>::NotOwner);
 
-            // Store the proof with the sender and block number.
-            Proofs::<T>::insert(&proof, (&sender, current_block));
+            // Remove claim from storage.
+            Proofs::<T>::remove(&proof);
 
-            // Emit an event that the claim was created.
-            Self::deposit_event(Event::ClaimCreated(sender, proof));
+            // Get the block number from the FRAME System.
+            //let current_block = <frame_system::Module<T>>::block_number();
+            let current_block = <frame_system::pallet::Pallet<T>>::block_number();
+
+            // Store the proof with the recipient and block number.
+            Proofs::<T>::insert(&proof, (&recipient, current_block));
+            
+            // Delete 
+            // Emit an event that the proof was transferred.
+            Self::deposit_event(Event::ClaimTransfer(sender, recipient, proof));
 
             Ok(().into())
         }
